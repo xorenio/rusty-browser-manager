@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8.5"
-headless_chrome = { version = "1.0.10" }
+headless_chrome = { version = "1.0.13" }
 anyhow = "1.0"
 serde_json = "1.0.117"
 chrono = "0.4.38"
