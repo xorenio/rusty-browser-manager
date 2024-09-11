@@ -14,6 +14,8 @@ use utils::{create_browser, get_profile_path, log_message};
 // Struct to hold tab metadata
 struct TabMetadata {
     open_time: Instant,
+    last_url_change_time: Instant,
+    current_url: String,
     tab: Arc<Tab>,
 }
 
@@ -77,16 +79,33 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return false; // Remove from metadata since it's already closed
             }
 
-            // Check if the tab has been open for more than 5 minutes
-            if metadata.open_time.elapsed() > Duration::from_secs(300) {
-                log_message(&format!("Closing tab: {}", tab_id), "INFO");
+            // Get the current URL of the tab
+            if let Some(tab_data) = external_tabs
+                .iter()
+                .find(|tab| tab["id"].as_str() == Some(tab_id))
+            {
+                if let Some(current_url) = tab_data["url"].as_str() {
+                    // If the URL has changed, update the metadata
+                    if current_url != metadata.current_url {
+                        metadata.current_url = current_url.to_string();
+                        metadata.last_url_change_time = Instant::now();
+                    }
+                }
+            }
+
+            // Check if the tab has been on the same URL for more than 5 minutes
+            if metadata.last_url_change_time.elapsed() > Duration::from_secs(300) {
+                log_message(
+                    &format!("Closing tab (on same URL for over 5 minutes): {}", tab_id),
+                    "INFO",
+                );
                 if let Err(e) = metadata.tab.close_with_unload() {
                     log_message(&format!("Failed to close tab: {}", e), "ERROR");
                 }
                 return false; // Remove closed tab from metadata
             }
 
-            true // Keep tab in metadata if it's still open and not expired
+            true // Keep tab in metadata if it's still open and URL hasn't stayed unchanged for 5 minutes
         });
 
         for tab in &external_tabs {
@@ -103,13 +122,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .iter()
                         .find(|tab| tab.get_target_id() == tab_id)
                     {
-                        tab_metadata_lock.insert(
-                            tab_id.to_string(),
-                            TabMetadata {
-                                open_time: Instant::now(),
-                                tab: Arc::clone(new_tab),
-                            },
-                        );
+                        if let Some(current_url) = tab["url"].as_str() {
+                            tab_metadata_lock.insert(
+                                tab_id.to_string(),
+                                TabMetadata {
+                                    open_time: Instant::now(),
+                                    last_url_change_time: Instant::now(),
+                                    current_url: current_url.to_string(),
+                                    tab: Arc::clone(new_tab),
+                                },
+                            );
+                        }
                     }
                 }
             }
